@@ -1,6 +1,8 @@
 import user from "../../DB/models/user.model.js"
+import AppError from "../../utils/appError.js"
 import { generateAccessToken, generatRefreshToken } from "../../utils/generateTokens.js"
-import { hash } from "../../utils/hash.js"
+import { compare, hash } from "../../utils/hash.js"
+import httpStatusText from "../../utils/httpStatusText.js"
 
 
 const register = async (req, res, next) => {
@@ -21,12 +23,10 @@ const register = async (req, res, next) => {
         email: newUser.email
     })
     const hashedRefreshToken = await hash(refreshToken)
-    newUser.refreshToken=hashedRefreshToken
-    newUser.password=hashedPassword
+    newUser.refreshToken = hashedRefreshToken
+    newUser.password = hashedPassword
     await newUser.save()
-    newUser=newUser.toObject()
-    delete newUser.password
-    delete newUser.__v
+    newUser = newUser.toObject()
 
     res.status(201).json({
         Status: 'SUCCESS',
@@ -39,7 +39,47 @@ const register = async (req, res, next) => {
     })
 }
 
+const login = async (req, res, next) => {
+    const { email, password } = req.body
+    const existingUser = await user.findOne({ email })
+    console.log(existingUser)
+    if (!existingUser) {
+        const error = new AppError('Account not found', 404)
+        next(error)
+    }
+    const result = await compare(password, existingUser.password)
+    console.log(result)
+    if (!result) {
+        const error = new AppError('Wrong Password', 404)
+        next(error)
+    }
+    const accessToken = generateAccessToken({
+        email: existingUser.email,
+        id: existingUser._id
+    })
+    const refreshToken = generatRefreshToken({
+        email: existingUser.email,
+        id: existingUser._id
+    })
+    const hashedToken = await hash(refreshToken)
+    await user.findOneAndUpdate({ _id: existingUser._id }, { refreshToken: hashedToken })
+    const userObject=existingUser.toObject()
+
+    res.status(200).json({
+        status: httpStatusText.SUCCESS,
+        data: {
+            user: {
+                ...userObject,
+                accessToken,
+                refreshToken
+            }
+
+        }
+    })
+}
+
 
 export {
-    register
+    register,
+    login
 }

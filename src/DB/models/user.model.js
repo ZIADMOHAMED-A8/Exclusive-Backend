@@ -12,12 +12,30 @@ const userModel = new mongoose.Schema({
     email: stringRequiredFields,
     password: {
         ...stringRequiredFields,
-        select: false
+
     },
-    refreshToken:  {
-    ...stringRequiredFields,
-    select: false
-}
+    refreshToken: {
+        ...stringRequiredFields,
+
+    }
 })
+
+userModel.set("toJSON", {
+    transform(doc, ret) {
+        delete ret.password;
+        delete ret.refreshToken;
+        delete ret.__v;
+        return ret;
+    }
+});
+
+userModel.set("toObject", {
+    transform(doc, ret) {
+        delete ret.password;
+        delete ret.refreshToken;
+        delete ret.__v;
+        return ret;
+    }
+});
 
 export default mongoose.model('users', userModel)
