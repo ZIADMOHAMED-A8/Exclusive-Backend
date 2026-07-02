@@ -1,5 +1,6 @@
 import user from "../../DB/models/user.model.js"
 import AppError from "../../utils/appError.js"
+import { decodeRefreshToken } from "../../utils/decodeToken.js"
 import { generateAccessToken, generatRefreshToken } from "../../utils/generateTokens.js"
 import { compare, hash } from "../../utils/hash.js"
 import httpStatusText from "../../utils/httpStatusText.js"
@@ -63,7 +64,7 @@ const login = async (req, res, next) => {
     })
     const hashedToken = await hash(refreshToken)
     await user.findOneAndUpdate({ _id: existingUser._id }, { refreshToken: hashedToken })
-    const userObject=existingUser.toObject()
+    const userObject = existingUser.toObject()
 
     res.status(200).json({
         status: httpStatusText.SUCCESS,
@@ -78,8 +79,31 @@ const login = async (req, res, next) => {
     })
 }
 
+const refresh = async (req, res, next) => {
+    const { id } = decodeRefreshToken(req)
+    const existingUser = await user.findById(id)
+    if (!existingUser) {
+        const error = new AppError('user not found')
+        return next(error)
+    }
+    const accessToken = generateAccessToken({
+        id: existingUser._id,
+        email: existingUser.email
+    })
+    const refreshToken = generatRefreshToken({
+        id: existingUser._id,
+        email: existingUser.email
+    })
+    const hashedToken = await hash(refreshToken)
+    await user.findByIdAndUpdate(id, { refreshToken: hashedToken })
+    res.status(200).json({
+        accessToken,
+        refreshToken
+    })
 
+}
 export {
     register,
-    login
+    login,
+    refresh
 }

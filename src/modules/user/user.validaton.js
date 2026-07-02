@@ -22,9 +22,14 @@ const loginSchema=z.object({
     })
 })
 
-
+// const refreshSchema=z.object({
+//     body:z.object({
+//         id:z.jwt('please provide a valid jwt')
+//     })
+// })
 
 export {
     registerSchema,
-    loginSchema
+    loginSchema,
+    // refreshSchema
 }
