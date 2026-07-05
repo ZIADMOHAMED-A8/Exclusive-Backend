@@ -4,7 +4,7 @@ function generateAccessToken(data){
     return accessToken
 }
 function generatRefreshToken(data){
-    const refreshToken=jwt.sign(data,process.env.access_secret_key,{expiresIn:'7d'})
+    const refreshToken=jwt.sign(data,process.env.refresh_secret_key,{expiresIn:'7d'})
     return refreshToken
 }
 
