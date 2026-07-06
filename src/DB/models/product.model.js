@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { minLength } from "zod";
 
 const productSchema = mongoose.Schema({
     name: {
@@ -18,12 +19,14 @@ const productSchema = mongoose.Schema({
     description: {
         type: String,
         required: true,
-        trim: true
+        trim: true,
+        minLength:10
 
     },
     stock: {
         type: Number,
         required: true,
+        min:0
 
     },
     seller:{
@@ -42,4 +45,4 @@ const productSchema = mongoose.Schema({
 
 })
 
-mongoose.model('product',productSchema)
+export default mongoose.model('product',productSchema)

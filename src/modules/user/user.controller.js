@@ -1,12 +1,12 @@
 import { Router } from "express";
-import { createUser, deleteMyAccount, deleteUser, getMyAccount, getUser, getUsers, login, refresh, register, updateMyAccount, updateUser } from "./user.service.js";
+import { deleteMyAccount, deleteUser, getMyAccount, getUser, getUsers, login, refresh, register, updateMyAccount, updateUser } from "./user.service.js";
 import validate from "../../middlewares/validate.js";
-import { createUserSchema, loginSchema, myAccountUpdateSchema, registerSchema, updateUserSchema, userIdSchema } from "./user.validaton.js";
+import {  loginSchema, myAccountUpdateSchema, registerSchema, updateUserSchema, userIdSchema } from "./user.validaton.js";
 import asyncWrapper from "../../middlewares/asyncWrapper.js";
 import roles from "../../utils/rolesArray.js";
 import authorize from "../../middlewares/authorize.js";
 const router=Router()
-const authenticatedRoles=[roles.admin,roles.user]
+const authenticatedRoles=[roles.admin,roles.user,roles.seller]
 
 
 router.post('/register',validate(registerSchema),asyncWrapper(register))
@@ -19,7 +19,6 @@ router.route('/me')
 
 router.route('/')
     .get(authorize([roles.admin]), asyncWrapper(getUsers))
-    .post(authorize([roles.admin]), validate(createUserSchema), asyncWrapper(createUser))
 
 router.route('/:id')
     .get(authorize([roles.admin]),validate(userIdSchema), asyncWrapper(getUser))
