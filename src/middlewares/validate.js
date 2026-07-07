@@ -2,13 +2,13 @@
 import AppError from "../utils/appError.js"
 function validate(schema) {
     return (req, res, next) => {
-        console.log(schema instanceof Object);
-        console.log(req.body);
+        console.log(req.body,"body ss")
+        req.body= req.body ?? {}
+        console.log(schema,'aaaaa')
         const result = schema.safeParse({
             body: req.body,
             params: req.params,
             query: req.query,
-            file:req.file
         })
         if (!result.success) {
             console.log(result.error)

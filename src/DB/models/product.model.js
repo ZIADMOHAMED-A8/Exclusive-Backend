@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import { minLength } from "zod";
 
-const productSchema = mongoose.Schema({
+const productSchema = new mongoose.Schema({
     name: {
         type: String,
         required: true,
