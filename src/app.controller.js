@@ -2,11 +2,12 @@ import { error } from "console"
 import connectDB from "./DB/DbConnection.js"
 import userRouter from "./modules/user/user.controller.js"
 import httpStatusText from "./utils/httpStatusText.js"
+import { productRouter } from "./modules/product/product.controller.js"
 const bootstrap = (app, express) => {
     app.use(express.json())
     connectDB()
     app.use('/user', userRouter)
-
+    app.use('/product',productRouter)
 
 
 

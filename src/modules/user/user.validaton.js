@@ -1,4 +1,5 @@
 import z from "zod"
+import roles from "../../utils/rolesArray.js"
 
 const passwordSchema = z.string({
     error: "please provide a password"
@@ -10,13 +11,14 @@ const passwordSchema = z.string({
 const registerSchema = z.object({
     body: z.object({
         name: z.string('name should be a string')
-        .min(3, "name should be at least 3 charachters"),
+            .min(3, "name should be at least 3 charachters"),
         email: z.email('please provide a valid email'),
         password: passwordSchema,
         phone: z
             .string("please provide your phone number")
             .regex(/^01[0125]\d{8}$/, "Please provide a valid Egyptian phone number"),
-        addresses:z.array(z.string('expecting a string'),'please provide addresses as an array').optional()
+        role: z.enum(Object.keys(roles), "please provide the role").optional(),
+        addresses: z.array(z.string('expecting a string'), 'please provide addresses as an array').optional()
     }).strict()
 })
 
@@ -49,19 +51,7 @@ const myAccountUpdateSchema = z.object({
     })
 })
 
-const createUserSchema = z.object({
-    body: z.object({
-        name: z.string('name should be a string')
-            .min(3, "name should be at least 3 charachters"),
-        email: z.email('please provide a valid email'),
-        password: passwordSchema,
-        phone: z
-            .string("please provide your phone number")
-            .regex(/^01[0125]\d{8}$/, "Please provide a valid Egyptian phone number"),
-        role: z.enum(['admin', 'user'], "please provide the role").optional(),
-        addresses: z.array(z.string('expecting a string'), 'please provide addresses as an array').optional()
-    }).strict()
-})
+
 
 const updateUserSchema = z.object({
     params: userIdSchema.shape.params,
@@ -73,7 +63,7 @@ const updateUserSchema = z.object({
         phone: z
             .string("please provide your phone number")
             .regex(/^01[0125]\d{8}$/, "Please provide a valid Egyptian phone number").optional(),
-        role: z.enum(['admin', 'user'], "please provide the role").optional(),
+        role: z.enum(['admin', 'user'], "please provide the role ").optional(),
         addresses: z.array(z.string('expecting a string'), 'please provide addresses as an array').optional()
     }).strict().refine((data) => Object.keys(data).length > 0, {
         message: "please provide at least one field to update"
@@ -91,7 +81,6 @@ export {
     loginSchema,
     userIdSchema,
     myAccountUpdateSchema,
-    createUserSchema,
     updateUserSchema,
     // refreshSchema
 }
