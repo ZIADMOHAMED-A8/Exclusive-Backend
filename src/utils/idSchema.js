@@ -1,8 +1,8 @@
 import z from "zod"
+import { ObjectId } from "mongodb";
 
-
-export default 
-     z.object({
-        id: z.string("please provide a user id")
-            .regex(/^[0-9a-fA-F]{24}$/, "please provide a valid user id")
-    })
+export default
+    z.string().refine(
+        (value) => ObjectId.isValid(value),
+        { message: "Invalid MongoDB ObjectId" }
+    )

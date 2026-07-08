@@ -21,5 +21,7 @@
     "nodemon": "^3.1.14",
     "zod": "^4.4.3"
   },
-  "type": "module"
+  "type": "module",
+   "javascript.preferences.importModuleSpecifierEnding": "js",
+  "typescript.preferences.importModuleSpecifierEnding": "js"
 }

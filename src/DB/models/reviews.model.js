@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-const reviewsSchema = mongoose.Schema({
+const reviewsSchema = new mongoose.Schema({
     stars: {
         type: Number,
         min: 1,

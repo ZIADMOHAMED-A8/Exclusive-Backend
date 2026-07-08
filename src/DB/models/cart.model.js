@@ -8,7 +8,9 @@ const cartSchema = new mongoose.Schema({
         unique: true
     },
     products: [
+
         {
+            _id: false,
             product: {
                 type: mongoose.Schema.Types.ObjectId,
                 ref: "product",
@@ -17,14 +19,15 @@ const cartSchema = new mongoose.Schema({
             quantity: {
                 type: Number,
                 required: true,
-                min:1,
-                default:1
+                min: 1,
+                default: 1
             }
         }
     ],
-    default:[]
-},{
-    timestamps:true
+    
+}, {
+    timestamps: true,
+    default: []
 })
 
 export default mongoose.model('cart', cartSchema)
