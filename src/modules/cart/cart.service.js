@@ -56,8 +56,12 @@ const removeItem = async (req, res, next) => {
 
     const cart = await cartModel.findOne({ user: id })
     console.log(cart)
-    const item = cart.products.find((item) =>
+    const item = cart?.products?.find((item) =>
         item.product.toString() === itemId)
+    if(!item){
+        const error=new AppError("product not found in user's cart")
+        return next(error)
+    }
     item.quantity--;
     await cart.save()
     return res.status(200).json({
@@ -72,7 +76,7 @@ const getCart = async (req, res, next) => {
     const { id } = decodeAccessToken(req)
     console.log(id)
     const cart = await cartModel.findOne({ user: id }).populate('products.product')
-    const totalPrice=cart.products.reduce((acc,curr)=>acc+(curr.quantity * curr.product.price),0) ?? 0
+    const totalPrice=cart?.products?.reduce((acc,curr)=>acc+(curr.quantity * curr.product.price),0) ?? 0
     console.log(totalPrice)
     return res.status(200).json({
         status: httpStatusText.SUCCESS,
