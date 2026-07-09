@@ -1,7 +1,10 @@
 import mongoose from "mongoose";
 
-const paymentSchema = new Schema({
-    amount: Number,
+const paymentSchema = new mongoose.Schema({
+    amount: {
+        type: Number,
+        required: true
+    },
 
     method: {
         type: String,
@@ -20,12 +23,18 @@ const paymentSchema = new Schema({
         default: "pending"
     },
 
-    transactionId: String,
+    transactionId: {
+        type: String,
+        required: true,
+        unique: true
+    },
 
     gateway: {
         type: String,
-        enum: ["stripe", "paymob"]
+        enum: ["stripe", "paymob"],
+        required: true
     }
 
 }, { timestamps: true });
-mongoose.model('payment', paymentSchema)
+
+export default mongoose.model('payment', paymentSchema)
