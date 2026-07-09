@@ -1,5 +1,4 @@
-import mongoose, { mongo } from "mongoose";
-import { required } from "zod/mini";
+import mongoose from "mongoose";
 
 const orderSchema = mongoose.Schema(
     {
@@ -68,4 +67,4 @@ const orderSchema = mongoose.Schema(
         timestamps: true
     })
 
-mongoose.model('order', orderSchema)
+export default mongoose.model('order', orderSchema)
