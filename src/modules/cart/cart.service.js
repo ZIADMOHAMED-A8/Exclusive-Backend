@@ -1,11 +1,12 @@
+import mongoose from "mongoose"
 import cartModel from "../../DB/models/cart.model.js"
 import orderModel from "../../DB/models/order.model.js"
 import paymentModel from "../../DB/models/payment.model.js"
+import productModel from "../../DB/models/product.model.js"
 import AppError from "../../utils/appError.js"
 import { decodeAccessToken } from "../../utils/decodeToken.js"
 import httpStatusText from "../../utils/httpStatusText.js"
 import stripe from "../../utils/stripe.js"
-
 const addItem = async (req, res, next) => {
     const itemId = req.body.id
     const itemQuantity = +(req.body.quantity)
@@ -127,7 +128,7 @@ const createCheckoutSession = async (req, res, next) => {
         line_items,
 
         mode: "payment",
-
+        billing_address_collection: "required",
         shipping_address_collection: {
             allowed_countries: ["US", "EG"]
         },
@@ -149,66 +150,89 @@ const createCheckoutSession = async (req, res, next) => {
     res.status(200).json(session)
 }
 
+
 const createOrderFromPaidSession = async (session) => {
-    let payment = await paymentModel.findOne({ transactionId: session.payment_intent })
-    if (payment) {
-        const existingOrder = await orderModel.findOne({ payment: payment._id })
-        if (existingOrder) {
-            return
-        }
+    console.log('session',session)
+    const dbSession = await mongoose.startSession();
+
+    try {
+        let createdOrder = null;
+
+        await dbSession.withTransaction(async () => {
+            let payment = await paymentModel.findOne(
+                { transactionId: session.payment_intent }
+            ).session(dbSession);
+
+            if (payment) {
+                const existingOrder = await orderModel.findOne({ payment: payment._id }).session(dbSession);
+                if (existingOrder) {
+                    createdOrder = existingOrder;
+                    return; 
+                }
+            }
+
+            const cart = await cartModel.findById(session.metadata.cartId)
+                .populate('products.product')
+                .session(dbSession);
+
+            if (!cart || cart.products.length === 0) {
+                return; 
+            }
+
+            for (const item of cart.products) {
+                const updated = await productModel.updateOne(
+                    { _id: item.product._id, stock: { $gte: item.quantity } },
+                    { $inc: { stock: -item.quantity } }
+                ).session(dbSession);
+
+                if (updated.modifiedCount === 0) {
+                    throw new AppError(`Product ${item.product._id} out of stock`);
+                }
+            }
+
+            const items = cart.products.map((item) => ({
+                product: item.product._id,
+                name: item.product.name,
+                thumbnail: item.product.thumbnail,
+                price: item.product.price,
+                quantity: item.quantity
+            }));
+
+            const totalPrice = items.reduce((acc, item) => acc + item.price * item.quantity, 0);
+
+            if (!payment) {
+                const paymentDocs = await paymentModel.create([{
+                    amount: (session.amount_total ?? Math.round(totalPrice * 100)) / 100,
+                    status: "paid",
+                    transactionId: session.payment_intent,
+                    gateway: "stripe"
+                }], { session: dbSession });
+                payment = paymentDocs[0];
+            }
+
+            const shippingAddress = session?.customer_details?.address
+               
+
+            const orderDocs = await orderModel.create([{
+                items,
+                user: session.metadata.userId,
+                payment: payment._id,
+                delieveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                shippingAddress,
+                totalPrice,
+                orderStatus: "processing",
+            }], { session: dbSession });
+
+            createdOrder = orderDocs[0];
+
+            await cartModel.findByIdAndDelete(cart._id).session(dbSession);
+        });
+
+        return createdOrder;
+    } finally {
+        await dbSession.endSession();
     }
-
-    const cart = await cartModel.findById(session.metadata.cartId).populate('products.product')
-    if (!cart || cart.products.length === 0) {
-        throw new AppError("cart not found or empty", 404)
-    }
-
-    const items = cart.products.map((item) => ({
-        product: item.product._id,
-        name: item.product.name,
-        thumbnail: item.product.thumbnail,
-        price: item.product.price,
-        quantity: item.quantity
-    }))
-
-    const totalPrice = items.reduce((acc, item) => acc + item.price * item.quantity, 0)
-    if (!payment) {
-        payment = await paymentModel.create({
-            amount: (session.amount_total ?? Math.round(totalPrice * 100)) / 100,
-            status: "paid",
-            transactionId: session.payment_intent,
-            gateway: "stripe"
-        })
-    }
-
-    const existingOrder = await orderModel.findOne({ payment: payment._id })
-    if (existingOrder) {
-        return
-    }
-
-    const shippingAddress = session.shipping_details?.address
-        ? [
-            session.shipping_details.address.line1,
-            session.shipping_details.address.line2,
-            session.shipping_details.address.city,
-            session.shipping_details.address.state,
-            session.shipping_details.address.country,
-            session.shipping_details.address.postal_code
-        ].filter(Boolean).join(", ")
-        : "Not provided"
-
-    await orderModel.create({
-        items,
-        user: session.metadata.userId,
-        payment: payment._id,
-        delieveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        shippingAddress,
-        totalPrice,
-        orderStatus: "processing"
-    })
-
-    await cartModel.findByIdAndDelete(cart._id)
-}
+};
 
 const stripeWebhook = async (req, res, next) => {
     console.log('detected')
