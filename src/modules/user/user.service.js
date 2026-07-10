@@ -1,4 +1,7 @@
 import user from "../../DB/models/user.model.js"
+import mongoose from "mongoose"
+import orderModel from "../../DB/models/order.model.js"
+import productModel from "../../DB/models/product.model.js"
 import AppError from "../../utils/appError.js"
 import { decodeRefreshToken } from "../../utils/decodeToken.js"
 import { generateAccessToken, generatRefreshToken } from "../../utils/generateTokens.js"
@@ -180,6 +183,60 @@ const deleteMyAccount = async (req, res, next) => {
     res.status(204).send()
 }
 
+const getMyOrders = async (req, res, next) => {
+    const orders = await orderModel.find({ user: req.user.id }).populate("payment")
+
+    res.status(200).json({
+        status: httpStatusText.SUCCESS,
+        results: orders.length,
+        data: {
+            orders
+        }
+    })
+}
+
+const cancelMyOrder = async (req, res, next) => {
+    const dbSession = await mongoose.startSession()
+
+    try {
+        let cancelledOrder
+
+        await dbSession.withTransaction(async () => {
+            const order = await orderModel.findOne({
+                _id: req.params.id,
+                user: req.user.id
+            }).session(dbSession)
+
+            if (!order) {
+                throw new AppError('order not found', 404)
+            }
+
+            if (order.orderStatus !== 'processing') {
+                throw new AppError('order cannot be cancelled unless it is still processing', 400)
+            }
+
+            for (const item of order.items) {
+                await productModel.updateOne(
+                    { _id: item.product },
+                    { $inc: { stock: item.quantity } }
+                ).session(dbSession)
+            }
+
+            order.orderStatus = 'cancelled'
+            cancelledOrder = await order.save({ session: dbSession })
+        })
+
+        res.status(200).json({
+            status: httpStatusText.SUCCESS,
+            data: {
+                order: cancelledOrder
+            }
+        })
+    } finally {
+        await dbSession.endSession()
+    }
+}
+
 const deleteUser = async (req, res, next) => {
     const { id } = req.params
     const deletedUser = await user.findByIdAndDelete(id)
@@ -265,6 +322,8 @@ export {
     getMyAccount,
     updateMyAccount,
     deleteMyAccount,
+    getMyOrders,
+    cancelMyOrder,
     createUser,
     getUsers,
     getUser,

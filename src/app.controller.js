@@ -4,6 +4,7 @@ import userRouter from "./modules/user/user.controller.js"
 import httpStatusText from "./utils/httpStatusText.js"
 import { productRouter } from "./modules/product/product.controller.js"
 import cartRouter from "./modules/cart/cart.controller.js"
+import orderRouter from "./modules/order/order.controller.js"
 import { stripeWebhook } from "./modules/cart/cart.service.js"
 const bootstrap = (app, express) => {
     app.post('/cart/webhook', express.raw({ type: 'application/json' }), stripeWebhook)
@@ -12,6 +13,7 @@ const bootstrap = (app, express) => {
     app.use('/user', userRouter)
     app.use('/product',productRouter)
     app.use('/cart',cartRouter)
+    app.use('/order',orderRouter)
 
 
 
