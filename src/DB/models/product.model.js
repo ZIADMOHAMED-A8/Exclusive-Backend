@@ -1,6 +1,4 @@
 import mongoose from "mongoose";
-import { minLength } from "zod";
-
 const productSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -35,6 +33,10 @@ const productSchema = new mongoose.Schema({
         required:true
     },
     averageRating:{
+        type:Number,
+        default:0,
+    },
+    totalStars:{
         type:Number,
         default:0,
     },

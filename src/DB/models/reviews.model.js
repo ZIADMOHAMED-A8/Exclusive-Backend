@@ -16,7 +16,7 @@ const reviewsSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         required: true,
         ref:'user',
-        uni
+        
     },
     product: {
         type: mongoose.Schema.Types.ObjectId,
@@ -30,3 +30,8 @@ reviewsSchema.index(
     { user: 1, product: 1 },
     { unique: true }
 );
+
+
+export default mongoose.model('reviews', reviewsSchema)
+
+

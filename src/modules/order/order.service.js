@@ -56,8 +56,32 @@ const deleteOrder = async (req, res, next) => {
     });
 };
 
+const updateOrderStatus = async (req, res, next) => {
+    const { id, status } = req.params;
+    const order = await orderModel.findById(id);
+
+    if (!order) {
+        return next(new AppError("order not found", 404));
+    }
+
+    if (order.orderStatus === "cancelled") {
+        return next(new AppError("cancelled order cannot be updated", 400));
+    }
+
+    order.orderStatus = status;
+    await order.save();
+
+    res.status(200).json({
+        status: httpStatusText.SUCCESS,
+        data: {
+            order
+        }
+    });
+};
+
 export {
     getOrders,
     getSingleOrder,
-    deleteOrder
+    deleteOrder,
+    updateOrderStatus
 };
