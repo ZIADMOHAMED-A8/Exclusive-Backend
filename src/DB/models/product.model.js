@@ -18,33 +18,44 @@ const productSchema = new mongoose.Schema({
         type: String,
         required: true,
         trim: true,
-        minLength:10
+        minLength: 10
 
     },
     stock: {
         type: Number,
         required: true,
-        min:0
-
+        min: 0
     },
-    seller:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:'user',
-        required:true
+    reservedStock: {
+        type: Number,
+        default: 0,
+        min: 0
     },
-    averageRating:{
-        type:Number,
-        default:0,
+    seller: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'user',
+        required: true
     },
-    totalStars:{
-        type:Number,
-        default:0,
+    averageRating: {
+        type: Number,
+        default: 0,
     },
-    reviewsCount:{
-        type:Number,
-        default:0,
+    totalStars: {
+        type: Number,
+        default: 0,
+    },
+    reviewsCount: {
+        type: Number,
+        default: 0,
     }
 
+}, {
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
 })
 
-export default mongoose.model('product',productSchema)
+productSchema.virtual('availableStock').get(function () {
+    return this.stock - (this.reservedStock ?? 0)
+})
+
+export default mongoose.model('product', productSchema)
