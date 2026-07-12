@@ -35,14 +35,14 @@ const updateProductRating = async (productId, starsDiff, countDiff) => {
                 }
             }
         ],
-        { new: true }
+        { new: true, updatePipeline: true } // 👈 دي الإضافة
     );
 };
 
-const addReview=async (req,res,next)=>{
-    const {id:user}=req.user
-    const{id}=req.params
-    const {stars,review}=req.body
+const addReview = async (req, res, next) => {
+    const { id: user } = req.user
+    const { id } = req.params
+    const { stars, review } = req.body
     const numericStars = Number(stars)
     const product = await productModel.findById(id)
     if (!product) {
@@ -54,20 +54,21 @@ const addReview=async (req,res,next)=>{
         return next(new AppError('you already reviewed this product', 409))
     }
 
-    const newReview=new reviewModel({
-        stars:numericStars,
+    const newReview = new reviewModel({
+        stars: numericStars,
         review,
         user,
-        product:id
-     })
-     await newReview.save()
-     await updateProductRating(id, numericStars, 1)
-     res.status(200).json({
-        status:httpStatusText.SUCCESS,
-        data:{
+        product: id
+    })
+    await newReview.save()
+    console.log(numericStars)
+    await updateProductRating(id, numericStars, 1)
+    res.status(200).json({
+        status: httpStatusText.SUCCESS,
+        data: {
             newReview
         }
-     })
+    })
 }
 
 const getProductReviews = async (req, res) => {
