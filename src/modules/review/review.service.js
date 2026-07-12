@@ -35,7 +35,7 @@ const updateProductRating = async (productId, starsDiff, countDiff) => {
                 }
             }
         ],
-        { new: true, updatePipeline: true } // 👈 دي الإضافة
+        { new: true, updatePipeline: true } 
     );
 };
 
@@ -61,7 +61,7 @@ const addReview = async (req, res, next) => {
         product: id
     })
     await newReview.save()
-    console.log(numericStars)
+    console.log(numericStars)   
     await updateProductRating(id, numericStars, 1)
     res.status(200).json({
         status: httpStatusText.SUCCESS,

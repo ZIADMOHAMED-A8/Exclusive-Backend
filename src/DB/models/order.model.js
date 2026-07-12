@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import { required } from "zod/mini";
 
 const orderSchema = mongoose.Schema(
     {
@@ -47,28 +46,22 @@ const orderSchema = mongoose.Schema(
         },
         shippingAddress: {
             city: {
-                type: String,
-                required: true
+                type: String
             },
             country: {
-                type: String,
-                required: true
+                type: String
             },
             line1: {
-                type: String,
-                required: true
+                type: String
             },
             line2: {
-                type: String,
-                required: true
+                type: String
             },
             postal_code: {
-                type: String,
-                required: true
+                type: String
             },
             state: {
-                type: String,
-                required: true
+                type: String
             },
         },
         totalPrice: {

@@ -7,11 +7,46 @@ import AppError from "../../utils/appError.js"
 import { decodeAccessToken } from "../../utils/decodeToken.js"
 import httpStatusText from "../../utils/httpStatusText.js"
 import stripe from "../../utils/stripe.js"
+
+const CHECKOUT_SESSION_EXPIRES_AFTER_SECONDS = 30 * 60
+
+const parseReservedItems = (session) => {
+    try {
+        return JSON.parse(session.metadata?.reservedItems ?? "[]")
+    } catch {
+        return []
+    }
+}
+
+const releaseReservedItems = async (reservedItems) => {
+    await Promise.all(reservedItems.map((item) =>
+        productModel.updateOne(
+            { _id: item.product, reservedStock: { $gte: item.quantity } },
+            { $inc: { reservedStock: -item.quantity } }
+        )
+    ))
+}
+
 const addItem = async (req, res, next) => {
     const itemId = req.body.id
     const itemQuantity = +(req.body.quantity)
     const { id } = decodeAccessToken(req)
+    const requestedItem = await productModel.findById(itemId)
+    if (!requestedItem) {
+        return next(new AppError('product not found', 404))
+    }
+
     let cart = await cartModel.findOne({ user: id });
+    const cartItem = cart?.products?.find((item) =>
+        item.product.toString() === itemId
+    )
+    const requestedQuantity = (cartItem?.quantity ?? 0) + itemQuantity
+
+    if (requestedItem.availableStock < requestedQuantity) {
+        const error = new AppError('requsted quantity is out of stock.', 400)
+        return next(error)
+    }
+
     if (!cart) {
         const cart = new cartModel({
             user: id,
@@ -22,6 +57,7 @@ const addItem = async (req, res, next) => {
                 }
             ]
         })
+        
         await cart.save()
         return res.status(200).json({
             status: httpStatusText.SUCCESS,
@@ -31,11 +67,10 @@ const addItem = async (req, res, next) => {
         })
     }
 
-    const item = cart.products.find((item) =>
-        item.product.toString() === itemId
-    )
+    const item = cartItem
     console.log(item)
     if (item) {
+
         item.quantity += itemQuantity
     }
     else {
@@ -57,7 +92,6 @@ const addItem = async (req, res, next) => {
 const removeItem = async (req, res, next) => {
     const itemId = req.params.id
     const { id } = decodeAccessToken(req)
-
     const cart = await cartModel.findOne({ user: id })
     console.log(cart)
     const item = cart?.products?.find((item) =>
@@ -109,10 +143,65 @@ const deleteCart = async (req, res, next) => {
 
 const createCheckoutSession = async (req, res, next) => {
     const { id } = decodeAccessToken(req)
-    const cart = await cartModel.findOne({ user: id }).populate('products.product')
+    const dbSession = await mongoose.startSession()
+    let cart
+    let reservedItems = []
+
+    try {
+        await dbSession.withTransaction(async () => {
+            reservedItems = []
+            cart = await cartModel.findOne({ user: id })
+                .populate('products.product')
+                .session(dbSession)
+
+            if (!cart || cart.products.length === 0) {
+                throw new AppError("cart is empty", 400)
+            }
+
+            for (const item of cart.products) {
+                if (!item.product) {
+                    throw new AppError("product not found", 404)
+                }
+                if (item.product.availableStock < item.quantity) {
+                    throw new AppError(`Product ${item.product._id} out of stock`, 400)
+                }
+
+                const updated = await productModel.updateOne(
+                    {
+                        _id: item.product._id,
+                        $expr: {
+                            $gte: [
+                                {
+                                    $subtract: [
+                                        "$stock",
+                                        { $ifNull: ["$reservedStock", 0] }
+                                    ]
+                                },
+                                item.quantity
+                            ]
+                        }
+                    },
+                    { $inc: { reservedStock: item.quantity } }
+                ).session(dbSession)
+
+                if (updated.modifiedCount === 0) {
+                    throw new AppError(`Product ${item.product._id} out of stock`, 400)
+                }
+
+                reservedItems.push({
+                    product: item.product._id.toString(),
+                    quantity: item.quantity
+                })
+            }
+        })
+    } finally {
+        await dbSession.endSession()
+    }
+
     if (!cart || cart.products.length === 0) {
         return next(new AppError("cart is empty", 400))
     }
+
     const line_items = cart.products.map((item) => ({
         price_data: {
             currency: "usd",
@@ -135,9 +224,11 @@ const createCheckoutSession = async (req, res, next) => {
 
         metadata: {
             userId: id,
-            cartId: cart._id.toString()
+            cartId: cart._id.toString(),
+            reservedItems: JSON.stringify(reservedItems)
         },
 
+        expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_SESSION_EXPIRES_AFTER_SECONDS,
         success_url: "https://www.youtube.com/watch?v=3OOHC_UzrKA",
         cancel_url: "https://www.youtube.com/watch?v=3OOHC_UzrKA"
     }
@@ -146,14 +237,20 @@ const createCheckoutSession = async (req, res, next) => {
         sessionPayload.customer_email = req.body.email
     }
 
-    const session = await stripe.checkout.sessions.create(sessionPayload)
-    res.status(200).json(session)
+    try {
+        const session = await stripe.checkout.sessions.create(sessionPayload)
+        res.status(200).json(session)
+    } catch (err) {
+        await releaseReservedItems(reservedItems)
+        throw err
+    }
 }
 
 
 const createOrderFromPaidSession = async (session) => {
-    console.log('session',session)
+    console.log('session', session)
     const dbSession = await mongoose.startSession();
+    const reservedItems = parseReservedItems(session)
 
     try {
         let createdOrder = null;
@@ -167,7 +264,7 @@ const createOrderFromPaidSession = async (session) => {
                 const existingOrder = await orderModel.findOne({ payment: payment._id }).session(dbSession);
                 if (existingOrder) {
                     createdOrder = existingOrder;
-                    return; 
+                    return;
                 }
             }
 
@@ -175,28 +272,55 @@ const createOrderFromPaidSession = async (session) => {
                 .populate('products.product')
                 .session(dbSession);
 
-            if (!cart || cart.products.length === 0) {
-                return; 
+            if (reservedItems.length === 0 && (!cart || cart.products.length === 0)) {
+                return;
             }
 
-            for (const item of cart.products) {
+            const itemsToConsume = reservedItems.length > 0
+                ? reservedItems
+                : cart.products.map((item) => ({
+                    product: item.product._id,
+                    quantity: item.quantity
+                }))
+
+            for (const item of itemsToConsume) {
                 const updated = await productModel.updateOne(
-                    { _id: item.product._id, stock: { $gte: item.quantity } },
-                    { $inc: { stock: -item.quantity } }
+                    {
+                        _id: item.product,
+                        stock: { $gte: item.quantity },
+                        reservedStock: { $gte: item.quantity }
+                    },
+                    {
+                        $inc: {
+                            stock: -item.quantity,
+                            reservedStock: -item.quantity
+                        }
+                    }
                 ).session(dbSession);
 
                 if (updated.modifiedCount === 0) {
-                    throw new AppError(`Product ${item.product._id} out of stock`);
+                    throw new AppError(`Reserved stock for product ${item.product} is not available`);
                 }
             }
 
-            const items = cart.products.map((item) => ({
-                product: item.product._id,
-                name: item.product.name,
-                thumbnail: item.product.thumbnail,
-                price: item.product.price,
-                quantity: item.quantity
-            }));
+            const productIds = itemsToConsume.map((item) => item.product)
+            const products = await productModel.find({ _id: { $in: productIds } }).session(dbSession)
+            const productsById = new Map(products.map((product) => [product._id.toString(), product]))
+
+            const items = itemsToConsume.map((item) => {
+                const product = productsById.get(item.product.toString())
+                if (!product) {
+                    throw new AppError(`Product ${item.product} not found`)
+                }
+
+                return {
+                    product: product._id,
+                    name: product.name,
+                    thumbnail: product.thumbnail,
+                    price: product.price,
+                    quantity: item.quantity
+                }
+            });
 
             const totalPrice = items.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
@@ -211,7 +335,7 @@ const createOrderFromPaidSession = async (session) => {
             }
 
             const shippingAddress = session?.customer_details?.address
-               
+
 
             const orderDocs = await orderModel.create([{
                 items,
@@ -225,7 +349,9 @@ const createOrderFromPaidSession = async (session) => {
 
             createdOrder = orderDocs[0];
 
-            await cartModel.findByIdAndDelete(cart._id).session(dbSession);
+            if (cart) {
+                await cartModel.findByIdAndDelete(cart._id).session(dbSession);
+            }
         });
 
         return createdOrder;
