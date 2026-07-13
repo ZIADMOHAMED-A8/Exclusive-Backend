@@ -1,5 +1,6 @@
 import mongoose from "mongoose"
 import cartModel from "../../DB/models/cart.model.js"
+import checkoutSessionModel from "../../DB/models/checkoutSession.model.js"
 import orderModel from "../../DB/models/order.model.js"
 import paymentModel from "../../DB/models/payment.model.js"
 import productModel from "../../DB/models/product.model.js"
@@ -9,22 +10,47 @@ import httpStatusText from "../../utils/httpStatusText.js"
 import stripe from "../../utils/stripe.js"
 
 const CHECKOUT_SESSION_EXPIRES_AFTER_SECONDS = 30 * 60
+const CHECKOUT_SESSION_EXPIRES_AFTER_MS = CHECKOUT_SESSION_EXPIRES_AFTER_SECONDS * 1000
 
-const parseReservedItems = (session) => {
-    try {
-        return JSON.parse(session.metadata?.reservedItems ?? "[]")
-    } catch {
-        return []
+const releaseCheckoutSessionReservation = async (filter, dbSession) => {
+    const checkoutSession = await checkoutSessionModel.findOneAndUpdate(
+        { ...filter, status: "reserved" },
+        { $set: { status: "released", releasedAt: new Date() } },
+        { new: true, session: dbSession }
+    )
+
+    if (!checkoutSession) {
+        return null
     }
-}
 
-const releaseReservedItems = async (reservedItems) => {
-    await Promise.all(reservedItems.map((item) =>
-        productModel.updateOne(
+    for (const item of checkoutSession.items) {
+        const updated = await productModel.updateOne(
             { _id: item.product, reservedStock: { $gte: item.quantity } },
             { $inc: { reservedStock: -item.quantity } }
-        )
-    ))
+        ).session(dbSession)
+
+        if (updated.modifiedCount === 0) {
+            throw new AppError(`Reserved stock for product ${item.product} is not available`)
+        }
+    }
+
+    return checkoutSession
+}
+
+const releaseCheckoutSession = async (filter) => {
+    const dbSession = await mongoose.startSession()
+
+    try {
+        let releasedSession = null
+
+        await dbSession.withTransaction(async () => {
+            releasedSession = await releaseCheckoutSessionReservation(filter, dbSession)
+        })
+
+        return releasedSession
+    } finally {
+        await dbSession.endSession()
+    }
 }
 
 const addItem = async (req, res, next) => {
@@ -145,11 +171,11 @@ const createCheckoutSession = async (req, res, next) => {
     const { id } = decodeAccessToken(req)
     const dbSession = await mongoose.startSession()
     let cart
-    let reservedItems = []
+    let checkoutSession
+    const expiresAt = new Date(Date.now() + CHECKOUT_SESSION_EXPIRES_AFTER_MS)
 
     try {
         await dbSession.withTransaction(async () => {
-            reservedItems = []
             cart = await cartModel.findOne({ user: id })
                 .populate('products.product')
                 .session(dbSession)
@@ -187,12 +213,20 @@ const createCheckoutSession = async (req, res, next) => {
                 if (updated.modifiedCount === 0) {
                     throw new AppError(`Product ${item.product._id} out of stock`, 400)
                 }
-
-                reservedItems.push({
-                    product: item.product._id.toString(),
-                    quantity: item.quantity
-                })
             }
+
+            const checkoutSessionDocs = await checkoutSessionModel.create([{
+                user: id,
+                cart: cart._id,
+                items: cart.products.map((item) => ({
+                    product: item.product._id,
+                    quantity: item.quantity
+                })),
+                status: "reserved",
+                expiresAt
+            }], { session: dbSession })
+
+            checkoutSession = checkoutSessionDocs[0]
         })
     } finally {
         await dbSession.endSession()
@@ -225,10 +259,10 @@ const createCheckoutSession = async (req, res, next) => {
         metadata: {
             userId: id,
             cartId: cart._id.toString(),
-            reservedItems: JSON.stringify(reservedItems)
+            checkoutSessionId: checkoutSession._id.toString()
         },
 
-        expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_SESSION_EXPIRES_AFTER_SECONDS,
+        expires_at: Math.floor(expiresAt.getTime() / 1000),
         success_url: "https://www.youtube.com/watch?v=3OOHC_UzrKA",
         cancel_url: "https://www.youtube.com/watch?v=3OOHC_UzrKA"
     }
@@ -237,20 +271,36 @@ const createCheckoutSession = async (req, res, next) => {
         sessionPayload.customer_email = req.body.email
     }
 
+    let session
+
     try {
-        const session = await stripe.checkout.sessions.create(sessionPayload)
-        res.status(200).json(session)
+        session = await stripe.checkout.sessions.create(sessionPayload)
     } catch (err) {
-        await releaseReservedItems(reservedItems)
+        await releaseCheckoutSession({ _id: checkoutSession._id })
         throw err
     }
+
+    try {
+        await checkoutSessionModel.updateOne(
+            { _id: checkoutSession._id },
+            { $set: { stripeSessionId: session.id } }
+        )
+    } catch (err) {
+        console.error("Failed to save Stripe checkout session id", err.message)
+    }
+
+    res.status(200).json(session)
 }
 
 
 const createOrderFromPaidSession = async (session) => {
     console.log('session', session)
+    const checkoutSessionId = session.metadata?.checkoutSessionId
+    if (!checkoutSessionId) {
+        return null
+    }
+
     const dbSession = await mongoose.startSession();
-    const reservedItems = parseReservedItems(session)
 
     try {
         let createdOrder = null;
@@ -268,20 +318,25 @@ const createOrderFromPaidSession = async (session) => {
                 }
             }
 
-            const cart = await cartModel.findById(session.metadata.cartId)
-                .populate('products.product')
-                .session(dbSession);
+            const checkoutSession = await checkoutSessionModel.findOneAndUpdate(
+                { _id: checkoutSessionId, status: "reserved" },
+                { $set: { status: "paid", paidAt: new Date() } },
+                { new: true, session: dbSession }
+            )
 
-            if (reservedItems.length === 0 && (!cart || cart.products.length === 0)) {
+            if (!checkoutSession) {
                 return;
             }
 
-            const itemsToConsume = reservedItems.length > 0
-                ? reservedItems
-                : cart.products.map((item) => ({
-                    product: item.product._id,
-                    quantity: item.quantity
-                }))
+            const cart = await cartModel.findById(checkoutSession.cart)
+                .populate('products.product')
+                .session(dbSession);
+
+            if (checkoutSession.items.length === 0) {
+                return;
+            }
+
+            const itemsToConsume = checkoutSession.items
 
             for (const item of itemsToConsume) {
                 const updated = await productModel.updateOne(
@@ -334,12 +389,12 @@ const createOrderFromPaidSession = async (session) => {
                 payment = paymentDocs[0];
             }
 
-            const shippingAddress = session?.customer_details?.address
+            const shippingAddress = session?.shipping_details?.address ?? session?.customer_details?.address
 
 
             const orderDocs = await orderModel.create([{
                 items,
-                user: session.metadata.userId,
+                user: checkoutSession.user,
                 payment: payment._id,
                 delieveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
                 shippingAddress,
@@ -382,6 +437,17 @@ const stripeWebhook = async (req, res, next) => {
             }
         }
 
+        if (event.type === "checkout.session.expired") {
+            const session = event.data.object
+            const checkoutSessionId = session.metadata?.checkoutSessionId
+
+            await releaseCheckoutSession(
+                checkoutSessionId
+                    ? { _id: checkoutSessionId }
+                    : { stripeSessionId: session.id }
+            )
+        }
+
         res.status(200).json({ received: true })
     } catch (err) {
         next(err)
@@ -394,5 +460,6 @@ export {
     getCart,
     deleteCart,
     createCheckoutSession,
+    releaseCheckoutSession,
     stripeWebhook
 }
