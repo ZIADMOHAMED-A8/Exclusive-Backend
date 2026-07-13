@@ -1,5 +1,4 @@
 import { z } from "zod";
-import mongoose from "mongoose";
 import idSchema from "../../utils/idSchema.js";
 import paginationSchema from "../../utils/paginationSchema.js";
 const productSchema = z.object({
@@ -32,7 +31,9 @@ const createProductSchema = z.object({
 const updatedProductSchema = z.object({
     body: productSchema.partial()
         .refine((data) => Object.keys(data).length > 0, { message: 'please provide at least 1 field' }),
-    params: idSchema
+    params: z.object({
+        id: idSchema
+    })
 })
 
 const getProductsSchena = z.object({
@@ -40,14 +41,20 @@ const getProductsSchena = z.object({
 })
 
 const getSingleProductSchema=z.object({
-    params:idSchema
+    params:z.object({
+        id:idSchema
+    })
 })
 const deleteProductSchema=z.object({
-    params:idSchema
+    params:z.object({
+        id:idSchema
+    })
 })
 
 const getProductsBySellerSchema=z.object({
-    params:idSchema,
+    params:z.object({
+        id:idSchema
+    }),
     query:paginationSchema
 })
 

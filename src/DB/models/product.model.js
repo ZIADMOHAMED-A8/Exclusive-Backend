@@ -55,7 +55,7 @@ const productSchema = new mongoose.Schema({
 })
 
 productSchema.virtual('availableStock').get(function () {
-    return this.stock - (this.reservedStock ?? 0)
+    return this.stock-this.reservedStock
 })
 
 export default mongoose.model('product', productSchema)
