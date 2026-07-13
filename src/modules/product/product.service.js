@@ -1,10 +1,10 @@
 import productModel from "../../DB/models/product.model.js"
+import reviewsModel from "../../DB/models/reviews.model.js"
 import AppError from "../../utils/appError.js"
 import { decodeAccessToken } from "../../utils/decodeToken.js"
 import httpStatusText from "../../utils/httpStatusText.js"
 
 const addProduct = async (req, res, next) => {
-    console.log('test tt')
     const data = req.body
     const { id } = decodeAccessToken(req)
     const newProduct = new productModel(
@@ -18,7 +18,7 @@ const addProduct = async (req, res, next) => {
         status: httpStatusText.SUCCESS,
         data: {
             product: {
-                ...data,
+                ...newProduct.toJSON(),
                 seller: id
             },
 
@@ -29,7 +29,6 @@ const addProduct = async (req, res, next) => {
 const editProduct = async (req, res, next) => {
     const data = req.body
     const existingProduct = await productModel.findOne({ _id: req.params.id })
-    console.log('prod', existingProduct)
     if (!existingProduct) {
         const error = new AppError('Product not found', 404)
         next(error)
@@ -62,14 +61,18 @@ const getProducts = async (req, res, next) => {
 const getSingleProduct = async (req, res, next) => {
     const id = req.params.id
     const product = await productModel.findOne({ _id: id })
+    const productReviews = await reviewsModel.find({ product: id })
     if (!product) {
         const error = new AppError('product not found')
         next(error)
     }
-    res.status(200).json({
+    res.status(200).json({  
         status: httpStatusText.SUCCESS,
         data: {
-            product
+            ...product.toJSON(),
+            reviews: productReviews
+
+
         }
     })
 }

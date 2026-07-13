@@ -61,7 +61,6 @@ const addReview = async (req, res, next) => {
         product: id
     })
     await newReview.save()
-    console.log(numericStars)   
     await updateProductRating(id, numericStars, 1)
     res.status(200).json({
         status: httpStatusText.SUCCESS,

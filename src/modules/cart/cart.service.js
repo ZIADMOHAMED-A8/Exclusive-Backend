@@ -94,7 +94,6 @@ const addItem = async (req, res, next) => {
     }
 
     const item = cartItem
-    console.log(item)
     if (item) {
 
         item.quantity += itemQuantity
@@ -119,7 +118,6 @@ const removeItem = async (req, res, next) => {
     const itemId = req.params.id
     const { id } = decodeAccessToken(req)
     const cart = await cartModel.findOne({ user: id })
-    console.log(cart)
     const item = cart?.products?.find((item) =>
         item.product.toString() === itemId)
     if (!item) {
@@ -141,10 +139,8 @@ const removeItem = async (req, res, next) => {
 
 const getCart = async (req, res, next) => {
     const { id } = decodeAccessToken(req)
-    console.log(id)
     const cart = await cartModel.findOne({ user: id }).populate('products.product')
     const totalPrice = cart?.products?.reduce((acc, curr) => acc + (curr.quantity * curr.product.price), 0) ?? 0
-    console.log(totalPrice)
     return res.status(200).json({
         status: httpStatusText.SUCCESS,
         data: {
@@ -294,7 +290,6 @@ const createCheckoutSession = async (req, res, next) => {
 
 
 const createOrderFromPaidSession = async (session) => {
-    console.log('session', session)
     const checkoutSessionId = session.metadata?.checkoutSessionId
     if (!checkoutSessionId) {
         return null
@@ -416,7 +411,6 @@ const createOrderFromPaidSession = async (session) => {
 };
 
 const stripeWebhook = async (req, res, next) => {
-    console.log('detected')
     let event
 
     try {
